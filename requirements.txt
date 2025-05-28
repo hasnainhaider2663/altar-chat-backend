@@ -1,0 +1,15 @@
+fastapi
+uvicorn[standard]
+python-dotenv
+psycopg2-binary
+sqlalchemy
+sqlmodel
+langchain
+langchain-community
+langchain-google-genai
+langchain-text-splitters
+langchain-postgres
+pypdf
+beautifulsoup4
+requests
+supabase
