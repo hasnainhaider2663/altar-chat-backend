@@ -2,8 +2,9 @@ from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import JSONResponse
 from app.middleware.auth import get_current_user
 import logging
-
+from langchain_core.documents import Document
 from app.services.crawler import simple_crawl_page
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -29,8 +30,24 @@ async def crawl_and_ingest_single_page(
         )
 
     try:
-        result = await simple_crawl_page(url)
-        print(result)
+        crawled_page =await simple_crawl_page(url)
+
+        # Convert crawled item to a Langchain Document
+        doc = Document(
+            page_content=crawled_page["content"],
+            metadata={
+                "source": crawled_page["url"],
+                "title": crawled_page["title"],
+                "type": "web",
+            },
+        )
+
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=1000, chunk_overlap=200
+        )  # Re-initialize for this scope
+        chunks = text_splitter.split_documents([doc])
+        for chunk in chunks:
+            print(chunk.model_dump())
         return JSONResponse(
             content={"message": f"Successfully crawled and ingested content from {url}"}
         )

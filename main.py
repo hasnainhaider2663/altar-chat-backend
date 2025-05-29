@@ -48,6 +48,7 @@ app.add_middleware(
 app.include_router(chat.router, prefix="/api", tags=["Customer Chat"])
 app.include_router(admin.router, prefix="/api/admin", tags=["Customer Chat"])
 
+
 @app.get("/")
 async def root():
 
