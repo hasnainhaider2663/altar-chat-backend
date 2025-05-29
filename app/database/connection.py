@@ -21,7 +21,7 @@ def get_pgvector_store():
     """
     try:
         embeddings = GoogleGenerativeAIEmbeddings(
-            model="models/embedding-001", api_key=settings.GEMINI_API_KEY
+            model="models/embedding-001", api_key=settings.GOOGLE_API_KEY
         )
 
         store = PGVector(
