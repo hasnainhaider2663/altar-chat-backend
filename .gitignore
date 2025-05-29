@@ -1,4 +1,4 @@
 .venv
 ._*
-.env.local
+.env*
 data/crawled_content.json

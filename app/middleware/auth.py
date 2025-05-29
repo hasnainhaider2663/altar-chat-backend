@@ -24,7 +24,6 @@ async def get_current_user(token: str = Security(oauth2_scheme)) -> dict:
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
-        print('token',token)
         response = supabase.auth.get_user(token)
 
         if response is None or response.user is None:
