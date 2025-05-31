@@ -3,7 +3,8 @@ from fastapi.responses import JSONResponse
 from app.middleware.auth import get_current_user
 import logging
 from langchain_core.documents import Document
-from app.services.crawler import simple_crawl_page
+from app.services.rag import rag_service
+from app.services.crawler.crawler import simple_crawl_page
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 logging.basicConfig(
@@ -30,7 +31,7 @@ async def crawl_and_ingest_single_page(
         )
 
     try:
-        crawled_page =await simple_crawl_page(url)
+        crawled_page = await simple_crawl_page(url)
 
         # Convert crawled item to a Langchain Document
         doc = Document(
@@ -44,10 +45,10 @@ async def crawl_and_ingest_single_page(
 
         text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=1000, chunk_overlap=200
-        )  # Re-initialize for this scope
+        )
         chunks = text_splitter.split_documents([doc])
-        for chunk in chunks:
-            print(chunk.model_dump())
+        await rag_service.add_documents_to_store(chunks)
+
         return JSONResponse(
             content={"message": f"Successfully crawled and ingested content from {url}"}
         )

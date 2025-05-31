@@ -15,7 +15,7 @@ DATABASE_URL = settings.DATABASE_URL
 engine = create_engine(DATABASE_URL)
 
 
-def get_pgvector_store():
+async def get_pgvector_store():
     """
     Initializes and returns the Langchain PGVector store.
     """
@@ -23,12 +23,11 @@ def get_pgvector_store():
         embeddings = GoogleGenerativeAIEmbeddings(
             model="models/embedding-001", api_key=settings.GOOGLE_API_KEY
         )
-
         store = PGVector(
-            embedding_function=embeddings,
+            embeddings=embeddings,
             collection_name="altar_chatbot_collection",
-            connection_string=DATABASE_URL,
-            table_name=LangchainPgVector.__tablename__,
+            connection=DATABASE_URL,
+            use_jsonb=True,
         )
         logging.info("PGVector store initialized successfully.")
         return store

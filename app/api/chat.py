@@ -1,7 +1,7 @@
-from fastapi import APIRouter, HTTPException, Header, Depends
+from fastapi import APIRouter, HTTPException
 from app.models.chat import ChatRequest, ChatResponse
 import logging
-from app.services.chat import generate_response
+from app.services.chat.chat import generate_response
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -21,7 +21,7 @@ async def chat_with_bot(
 
     try:
 
-        response_text =  await generate_response(
+        response_text = await generate_response(
             query=request.query,
         )
         return ChatResponse(response=f'{response_text} "{request.query}"')
