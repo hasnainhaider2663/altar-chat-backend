@@ -1,9 +1,7 @@
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 from langchain_postgres import PGVector
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from app.core.config import settings
-from app.models.document import LangchainPgVector
 import logging
 
 logging.basicConfig(
@@ -15,7 +13,7 @@ DATABASE_URL = settings.DATABASE_URL
 engine = create_engine(DATABASE_URL)
 
 
-async def get_pgvector_store():
+def get_pgvector_store():
     """
     Initializes and returns the Langchain PGVector store.
     """

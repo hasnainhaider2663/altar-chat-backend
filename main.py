@@ -28,7 +28,7 @@ app = FastAPI(
     title="Altar.io Chatbot Backend",
     description="API for Altar.io's AI chatbot, powered by Langchain, PostgreSQL, and Gemini.",
     version="1.0.0",
-    lifespan=lifespan,
+    lifespan=lifespan,debug=True,  
 )
 
 origins = [
