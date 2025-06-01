@@ -1,41 +1,42 @@
 from typing import Annotated, List, Literal, TypedDict, Dict, Any
 from langchain_core.documents import Document
 from app.database.connection import get_pgvector_store
-from langchain_core.prompts import PromptTemplate
+from langchain_core.prompts import (
+    ChatPromptTemplate,
+    HumanMessagePromptTemplate,
+    SystemMessagePromptTemplate,
+    MessagesPlaceholder,
+)
 from langchain.chat_models import init_chat_model
 from dotenv import load_dotenv
 import os
-from langgraph.graph import StateGraph, START, END
+from langgraph.graph import StateGraph, END, MessagesState
 import logging
 from langgraph.checkpoint.memory import MemorySaver
+from langchain_core.messages import HumanMessage, AIMessage
 
 
 load_dotenv()
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 llm = init_chat_model("gemini-2.0-flash", model_provider="google_genai")
 
+system_message_content = """
+You are the Altar.io AI assistant, a friendly, professional, and highly knowledgeable expert on Altar.io's services, expertise, and projects. Your goal is to provide accurate, helpful, and concise information while engaging the user in a natural, supportive conversation.
 
-template = """You are an Assistant chatbot for the Altar.io Website. Altar.io builds products for startups.Use the following pieces of context to answer the question at the end.
+**Here's how you should operate:**
 
-If you don't know the answer, just say that you don't know, don't try to make up an answer.
-Use three sentences maximum and keep the answer as concise as possible.
-
-Be mindful of the following guidelines:
-    1.  **Only use provided context:** Kindly base your answers exclusively on the information given in the "Context" section.
-    2.  **State limitations politely:** If you don't have enough information to answer a question based on the provided "Context," please politely state that you cannot assist with that specific query at this time. Kindly avoid guessing or fabricating details.
-    3.  **Be concise and professional:** Deliver information directly and clearly, maintaining a helpful and respectful tone.
-    4.  **Prioritize Altar.io information:** Always focus your responses on Altar.io's offerings and capabilities.
-
-{context}
-
-Helpful Answer:"""
-
-prompt = PromptTemplate.from_template(template)
+1.  **Prioritize User Understanding:** Always strive to fully understand the user's intent. If a query is ambiguous or incomplete, politely ask clarifying questions to get the necessary details.
+2.  **Base Answers on Context:** Your primary source of truth is the "Context" section provided. Use this information exclusively to formulate your answers.
+3.  **Engage and Offer Next Steps:** After providing an answer, consider if there's related information the user might find useful. Proactively offer to elaborate or suggest next steps, like asking if they'd like to know more about a specific project or service.
+4.  **Ask Follow-Up Questions:** If you can't fully answer a question with the given context, or if the user's query opens up new avenues, thoughtfully ask a relevant follow-up question to gather more details or guide them to a more specific topic.
+5.  **Maintain Professional Politeness:** If the answer is not available in the "Context," politely state that you cannot assist with that specific query at this time. Avoid making up information.
+6.  **Be Concise and Focused:** Deliver information directly and clearly, avoiding unnecessary jargon or overly casual language. Keep responses to the point, but ensure they are complete and helpful.
+7.  **Focus on Altar.io:** Keep all responses centered on Altar.io's offerings and capabilities.
+8.  **Care about the user and their needs.
+"""
 
 
 class Search(TypedDict):
-    """Search query."""
-
     query: Annotated[str, ..., "Search query to run."]
     section: Annotated[
         Literal["beginning", "middle", "end"],
@@ -44,34 +45,40 @@ class Search(TypedDict):
     ]
 
 
-class State(TypedDict):
-    """State for the RAG application."""
-
-    question: str
-    context: List[Document]
-    answer: str
-    query: Search
+class State(MessagesState):
+    context: List[Document] = []
+    query_struct: Search = {"query": "", "section": "middle"}
 
 
-def analyze_query(state: Dict[str, Any]) -> Dict[str, Any]:
-    """Analyze the query and structure it."""
+def analyze_query(state: State) -> Dict[str, Any]:
+    last_human_message = None
+    for msg in reversed(state["messages"]):
+        if isinstance(msg, HumanMessage):
+            last_human_message = msg
+            break
+
+    if not last_human_message:
+        logging.error("No human message found in state for analysis.")
+        return {"query_struct": {"query": "", "section": "middle"}}
+
     try:
         structured_llm = llm.with_structured_output(Search)
-        query = structured_llm.invoke(state["question"])
-        return {"query": query}
+        query_analysis = structured_llm.invoke(last_human_message.content)
+        return {"query_struct": query_analysis}
     except Exception as e:
         logging.error(f"Error in analyze_query: {e}")
-        return {"query": {"query": state["question"], "section": "middle"}}
+        return {
+            "query_struct": {"query": last_human_message.content, "section": "middle"}
+        }
 
 
-def retrieve(state: Dict[str, Any]) -> Dict[str, Any]:
-    """Retrieve relevant documents."""
+def retrieve(state: State) -> Dict[str, Any]:
     try:
-        query = state["query"]
+        query_analysis = state["query_struct"]
         store = get_pgvector_store()
         retrieved_docs = store.similarity_search(
-            query["query"],
-            k=2,  # Limit results
+            query_analysis["query"],
+            k=4,
         )
         return {"context": retrieved_docs}
     except Exception as e:
@@ -79,47 +86,72 @@ def retrieve(state: Dict[str, Any]) -> Dict[str, Any]:
         return {"context": []}
 
 
-def generate(state: Dict[str, Any]) -> Dict[str, Any]:
-    """Generate the final answer."""
+def generate(state: State) -> Dict[str, Any]:
     try:
-        # Combine document content
         docs_content = "\n\n".join(doc.page_content for doc in state["context"])
 
-        # Format prompt
-        formatted_prompt = template.format(
-            context=docs_content, question=state["question"]
+        full_system_message_with_context = (
+            system_message_content + "\n\n---Context:\n" + docs_content + "\n---"
         )
 
-        # Get response from LLM
-        response = llm.invoke(formatted_prompt)
-        return {
-            "answer": (
-                response.content if hasattr(response, "content") else str(response)
+        messages_template = [
+            SystemMessagePromptTemplate.from_template(full_system_message_with_context),
+            MessagesPlaceholder(variable_name="chat_history"),
+            HumanMessagePromptTemplate.from_template("{question}"),
+        ]
+
+        chat_prompt = ChatPromptTemplate.from_messages(messages_template)
+
+        current_question_text = ""
+        for msg in reversed(state["messages"]):
+            if isinstance(msg, HumanMessage):
+                current_question_text = msg.content
+                break
+
+        history_for_placeholder = [
+            msg
+            for msg in state["messages"]
+            if not (
+                isinstance(msg, HumanMessage) and msg.content == current_question_text
             )
-        }
+        ]
+
+        formatted_messages = chat_prompt.format_messages(
+            question=current_question_text, chat_history=history_for_placeholder
+        )
+
+        logging.info(f"Messages sent to LLM (length {len(formatted_messages)}):")
+        for i, msg in enumerate(formatted_messages):
+            logging.info(f"  {i}: {msg}")
+
+        response = llm.invoke(formatted_messages)
+
+        return {"messages": [AIMessage(content=response.content)]}
     except Exception as e:
         logging.error(f"Error in generate: {e}")
         return {
-            "answer": "I apologize, but I encountered an error processing your request. Thanks for asking!"
+            "messages": [
+                AIMessage(
+                    content="I apologize, but I encountered an error processing your request. Please try again later."
+                )
+            ]
         }
 
 
 async def create_rag_chain():
-    """Create and return the RAG chain."""
     try:
-        # Initialize graph builder with proper typing
         graph = StateGraph(State)
 
-        # Add nodes
         graph.add_node("analyze_query", analyze_query)
         graph.add_node("retrieve", retrieve)
         graph.add_node("generate", generate)
 
-        # Add edges
-        graph.add_edge(START, "analyze_query")
+        graph.set_entry_point("analyze_query")
+
         graph.add_edge("analyze_query", "retrieve")
         graph.add_edge("retrieve", "generate")
         graph.add_edge("generate", END)
+
         memory = MemorySaver()
 
         return graph.compile(checkpointer=memory)
@@ -129,22 +161,16 @@ async def create_rag_chain():
 
 
 async def query_rag_chain(question: str, thread_id: str) -> str:
-    """Query the RAG chain with a question."""
     try:
         chain = await create_rag_chain()
 
-        # Initialize state
-        initial_state: State = {
-            "question": question,
-            "context": [],
-            "answer": "",
-            "query": {"query": "", "section": "middle"},
-        }
         config = {"configurable": {"thread_id": thread_id}}
 
-        # Run chain
-        result = await chain.ainvoke(initial_state, config=config)
-        return result["answer"]
+        result = await chain.ainvoke(
+            {"messages": [HumanMessage(content=question)]}, config=config
+        )
+
+        return result["messages"][-1].content
     except Exception as e:
         logging.error(f"Error querying RAG chain: {e}")
         return "I apologize, but I encountered an error processing your request."
