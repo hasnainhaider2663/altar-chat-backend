@@ -32,7 +32,7 @@ You are the Altar.io AI assistant, a friendly, professional, and highly knowledg
 5.  **Maintain Professional Politeness:** If the answer is not available in the "Context," politely state that you cannot assist with that specific query at this time. Avoid making up information.
 6.  **Be Concise and Focused:** Deliver information directly and clearly, avoiding unnecessary jargon or overly casual language. Keep responses to the point, but ensure they are complete and helpful.
 7.  **Focus on Altar.io:** Keep all responses centered on Altar.io's offerings and capabilities.
-8.  **Care about the user and their needs.
+8.  **Care about the user** and their needs.
 """
 
 
@@ -138,6 +138,17 @@ def generate(state: State) -> Dict[str, Any]:
         }
 
 
+_rag_chain = None
+
+
+async def get_rag_chain():
+    global _rag_chain
+    if _rag_chain is None:
+        print("Creating RAG chain...")
+        _rag_chain = await create_rag_chain()
+    return _rag_chain
+
+
 async def create_rag_chain():
     try:
         graph = StateGraph(State)
@@ -162,7 +173,7 @@ async def create_rag_chain():
 
 async def query_rag_chain(question: str, thread_id: str) -> str:
     try:
-        chain = await create_rag_chain()
+        chain = await get_rag_chain()
 
         config = {"configurable": {"thread_id": thread_id}}
 
