@@ -1,6 +1,8 @@
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+import uvicorn
 from app.api import chat
 from app.api.admin import admin
 import logging
@@ -29,12 +31,13 @@ app = FastAPI(
     description="API for Altar.io's AI chatbot, powered by Langchain, PostgreSQL, and Gemini.",
     version="1.0.0",
     lifespan=lifespan,debug=True,  
+    
 )
 
 origins = [
     "http://localhost:3000",  # frontend (if running on 3000)
-    "http://localhost:3001",  # admin frontend (if running on 3001)
     "http://localhost:8000",  # Swagger UI
+    "https://v0-next-js-frontend-development-taupe.vercel.app",  # production frontend
 ]
 
 app.add_middleware(
@@ -53,3 +56,8 @@ app.include_router(admin.router, prefix="/api/admin", tags=["Customer Chat"])
 async def root():
 
     return {"message": "Altar.io Chatbot Backend is running!"}
+
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8000))  # Default to 8000 if not set
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
